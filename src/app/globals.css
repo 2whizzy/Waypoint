@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-paper text-ink font-sans antialiased;
+}
+
+*:focus-visible {
+  outline: 2px solid #175e54;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- Tiptap editor ---- */
+.tiptap {
+  @apply outline-none min-h-[50vh] text-[1.05rem] leading-[1.85];
+}
+.tiptap p {
+  @apply my-3;
+}
+.tiptap h2 {
+  @apply font-display text-2xl font-semibold mt-8 mb-3;
+}
+.tiptap h3 {
+  @apply font-display text-xl font-semibold mt-6 mb-2;
+}
+.tiptap ul {
+  @apply list-disc pl-6 my-3;
+}
+.tiptap ol {
+  @apply list-decimal pl-6 my-3;
+}
+.tiptap mark {
+  @apply bg-marigold-200 rounded-sm px-0.5;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  @apply text-ink-faint float-left h-0 pointer-events-none;
+}
+.comment-highlight {
+  @apply bg-marigold-100 border-b-2 border-marigold-400 cursor-pointer;
+}
+
+/* ---- Print / export ---- */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}
+
+::selection {
+  background: #d6e8e2;
+}
