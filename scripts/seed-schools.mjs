@@ -36,13 +36,14 @@ function domainFromUrl(url) {
   }
 }
 
+const PAGES = 15; // 15 * 100 = 1,500 schools — enough to include smaller well-known colleges
 const schools = [];
-for (let page = 0; page < 5; page++) {
+for (let page = 0; page < PAGES; page++) {
   const url =
     `https://api.data.gov/ed/collegescorecard/v1/schools?api_key=${API_KEY}` +
     `&fields=${FIELDS}&school.degrees_awarded.predominant=3&school.operating=1` +
     `&sort=latest.student.size:desc&per_page=100&page=${page}`;
-  process.stdout.write(`Fetching page ${page + 1}/5… `);
+  process.stdout.write(`Fetching page ${page + 1}/${PAGES}… `);
   const res = await fetch(url);
   if (!res.ok) {
     console.error(`\nAPI error ${res.status}: ${await res.text()}`);

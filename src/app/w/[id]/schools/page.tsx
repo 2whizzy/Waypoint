@@ -1,7 +1,7 @@
 "use client";
 
 import { SchoolLogo } from "@/components/schools/SchoolLogo";
-import { Button, Chip, EmptyState, Input, Spinner, StatusPill } from "@/components/ui";
+import { Button, Chip, EmptyState, Input, Label, Modal, Spinner, StatusPill } from "@/components/ui";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
 import type { School, WorkspaceSchool } from "@/lib/types";
@@ -10,6 +10,8 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+const EMPTY_CUSTOM_SCHOOL = { name: "", city: "", state: "", domain: "", url: "" };
+
 export default function SchoolsPage() {
   const supabase = useMemo(() => createClient(), []);
   const { workspace, me } = useWorkspace();
@@ -17,6 +19,8 @@ export default function SchoolsPage() {
   const [directory, setDirectory] = useState<School[]>([]);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [addingCustom, setAddingCustom] = useState(false);
+  const [customSchool, setCustomSchool] = useState(EMPTY_CUSTOM_SCHOOL);
 
   async function loadMine() {
     const { data } = await supabase
@@ -58,6 +62,25 @@ export default function SchoolsPage() {
       added_by: me.id,
     });
     loadMine();
+  }
+
+  async function submitCustomSchool(e: React.FormEvent) {
+    e.preventDefault();
+    const { data: school, error } = await supabase
+      .from("schools")
+      .insert({
+        name: customSchool.name.trim(),
+        city: customSchool.city.trim() || null,
+        state: customSchool.state.trim() || null,
+        domain: customSchool.domain.trim() || null,
+        url: customSchool.url.trim() || null,
+      })
+      .select()
+      .single();
+    if (error || !school) return;
+    await addSchool(school as School);
+    setAddingCustom(false);
+    setCustomSchool(EMPTY_CUSTOM_SCHOOL);
   }
 
   const myIds = new Set((mine ?? []).map((m) => m.school_id));
@@ -121,13 +144,18 @@ export default function SchoolsPage() {
       <section className="mt-10">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-xs font-semibold uppercase tracking-[0.15em] text-ink-faint">Directory</h2>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search 500 US colleges…"
-            className="!w-64"
-            aria-label="Search schools"
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search 500 US colleges…"
+              className="!w-64"
+              aria-label="Search schools"
+            />
+            <Button size="sm" variant="secondary" onClick={() => setAddingCustom(true)}>
+              + Can&apos;t find a school?
+            </Button>
+          </div>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {directory.map((s, i) => (
@@ -178,6 +206,63 @@ export default function SchoolsPage() {
           )}
         </div>
       </section>
+
+      <Modal
+        open={addingCustom}
+        onClose={() => {
+          setAddingCustom(false);
+          setCustomSchool(EMPTY_CUSTOM_SCHOOL);
+        }}
+        title="Add a school not in the directory"
+      >
+        <form onSubmit={submitCustomSchool} className="space-y-4">
+          <div>
+            <Label>School name</Label>
+            <Input
+              autoFocus
+              required
+              value={customSchool.name}
+              onChange={(e) => setCustomSchool({ ...customSchool, name: e.target.value })}
+            />
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <Label>City</Label>
+              <Input value={customSchool.city} onChange={(e) => setCustomSchool({ ...customSchool, city: e.target.value })} />
+            </div>
+            <div className="w-24">
+              <Label>State</Label>
+              <Input
+                maxLength={2}
+                value={customSchool.state}
+                onChange={(e) => setCustomSchool({ ...customSchool, state: e.target.value.toUpperCase() })}
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Website domain (for the logo)</Label>
+            <Input
+              placeholder="e.g. college.edu"
+              value={customSchool.domain}
+              onChange={(e) => setCustomSchool({ ...customSchool, domain: e.target.value })}
+            />
+            <p className="mt-1 text-xs text-ink-faint">
+              We fetch the logo automatically from this domain. Leave blank to use an initial instead.
+            </p>
+          </div>
+          <div>
+            <Label>Website URL (optional)</Label>
+            <Input
+              placeholder="https://…"
+              value={customSchool.url}
+              onChange={(e) => setCustomSchool({ ...customSchool, url: e.target.value })}
+            />
+          </div>
+          <Button type="submit" className="w-full">
+            Add school
+          </Button>
+        </form>
+      </Modal>
     </div>
   );
 }

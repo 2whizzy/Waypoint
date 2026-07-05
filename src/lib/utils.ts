@@ -108,5 +108,7 @@ export function initials(name: string): string {
 }
 
 export function schoolLogoUrl(domain: string | null): string | null {
-  return domain ? `https://logo.clearbit.com/${domain}` : null;
+  // Clearbit's free logo API was discontinued; Google's favicon service is the
+  // stable replacement and needs no API key.
+  return domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=128` : null;
 }
