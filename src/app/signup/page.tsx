@@ -17,25 +17,27 @@ export default function SignupPage() {
   const [color, setColor] = useState<string>(MEMBER_COLORS[0]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [needsConfirm, setNeedsConfirm] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { display_name: name } },
+
+    const res = await fetch("/api/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, display_name: name }),
     });
-    if (error) {
-      setError(error.message);
+    const body = await res.json();
+    if (!res.ok) {
+      setError(body.error ?? "Something went wrong");
       setBusy(false);
       return;
     }
-    if (!data.session) {
-      // email confirmation is enabled on the Supabase project
-      setNeedsConfirm(true);
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setError(error.message);
       setBusy(false);
       return;
     }
@@ -43,21 +45,6 @@ export default function SignupPage() {
     await supabase.rpc("accept_my_invites");
     router.push("/workspaces");
     router.refresh();
-  }
-
-  if (needsConfirm) {
-    return (
-      <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6 text-center">
-        <h1 className="font-display text-3xl font-semibold">Check your email</h1>
-        <p className="mt-3 text-sm text-ink-soft">
-          We sent a confirmation link to <strong>{email}</strong>. Click it, then{" "}
-          <Link href="/login" className="text-pine-600 underline">
-            sign in
-          </Link>
-          .
-        </p>
-      </main>
-    );
   }
 
   return (
