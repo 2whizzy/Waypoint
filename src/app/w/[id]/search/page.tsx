@@ -3,7 +3,7 @@
 import { Input, Spinner, StatusPill } from "@/components/ui";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
-import type { Comment, Doc, Resource } from "@/lib/types";
+import type { Comment, Doc } from "@/lib/types";
 import { formatRelative, tiptapText } from "@/lib/utils";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -22,21 +22,20 @@ export default function SearchPage() {
   const [query, setQuery] = useState("");
   const [docs, setDocs] = useState<Doc[] | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
-  const [resources, setResources] = useState<Resource[]>([]);
 
   useEffect(() => {
     (async () => {
-      const [{ data: d }, { data: r }] = await Promise.all([
-        supabase.from("documents").select("*").eq("workspace_id", workspace.id).is("deleted_at", null),
-        supabase.from("resources").select("*").eq("workspace_id", workspace.id),
-      ]);
+      const { data: d } = await supabase
+        .from("documents")
+        .select("*")
+        .eq("workspace_id", workspace.id)
+        .is("deleted_at", null);
       const ids = (d ?? []).map((x) => x.id);
       const { data: c } = ids.length
         ? await supabase.from("comments").select("*").in("document_id", ids)
         : { data: [] };
       setDocs(d ?? []);
       setComments(c ?? []);
-      setResources(r ?? []);
     })();
   }, [supabase, workspace.id]);
 
@@ -59,17 +58,14 @@ export default function SearchPage() {
       })
       .filter(Boolean) as { doc: Doc; snippet: string }[];
     const commentHits = comments.filter((c) => c.content.toLowerCase().includes(q));
-    const resourceHits = resources.filter((r) =>
-      `${r.title} ${r.content ?? ""} ${r.url ?? ""}`.toLowerCase().includes(q)
-    );
-    return { docHits, commentHits, resourceHits };
-  }, [q, docs, comments, resources]);
+    return { docHits, commentHits };
+  }, [q, docs, comments]);
 
   function docHref(d: Doc) {
     const base = `/w/${workspace.id}`;
     switch (d.type) {
       case "essay":
-        return `${base}/essay`;
+        return `${base}/essay/${d.id}`;
       case "activity":
         return `${base}/activities/${d.id}`;
       case "recommender":
@@ -97,7 +93,7 @@ export default function SearchPage() {
     <div className="mx-auto max-w-3xl">
       <h1 className="font-display text-2xl font-semibold">Search everything</h1>
       <p className="mt-0.5 text-sm text-ink-soft">
-        Essays, activities, brag sheets, supplemental answers, comments, and resources.
+        Essays, activities, brag sheets, supplemental answers, and comments.
       </p>
       <Input
         autoFocus
@@ -114,7 +110,7 @@ export default function SearchPage() {
         </div>
       ) : !q ? (
         <p className="mt-10 text-center text-sm text-ink-faint">Type to search across every document in the workspace.</p>
-      ) : results && results.docHits.length + results.commentHits.length + results.resourceHits.length === 0 ? (
+      ) : results && results.docHits.length + results.commentHits.length === 0 ? (
         <p className="mt-10 text-center text-sm text-ink-faint">No matches for “{query}”.</p>
       ) : (
         results && (
@@ -165,26 +161,6 @@ export default function SearchPage() {
                       </Link>
                     );
                   })}
-                </div>
-              </section>
-            )}
-            {results.resourceHits.length > 0 && (
-              <section>
-                <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-ink-faint">
-                  Resources ({results.resourceHits.length})
-                </h2>
-                <div className="space-y-2">
-                  {results.resourceHits.map((r) => (
-                    <div key={r.id} className="rounded-card border border-paper-line bg-paper-raised p-4 shadow-card">
-                      <p className="text-sm font-medium">{highlight(r.title)}</p>
-                      {r.url && (
-                        <a href={r.url} target="_blank" rel="noreferrer" className="text-xs text-pine-600 hover:underline">
-                          {r.url}
-                        </a>
-                      )}
-                      {r.content && <p className="mt-1 text-sm text-ink-soft">{highlight(r.content)}</p>}
-                    </div>
-                  ))}
                 </div>
               </section>
             )}

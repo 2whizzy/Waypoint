@@ -63,7 +63,7 @@ export default function ExtrasPage() {
         <div>
           <h1 className="font-display text-2xl font-semibold">Extras &amp; Context</h1>
           <p className="mt-0.5 text-sm text-ink-soft">
-            Additional information, supplements, and context — each with full versions, comments, and resources.
+            Additional information, supplements, and context — each with full versions and comments.
           </p>
         </div>
         <Button onClick={() => setAdding(true)}>+ Document</Button>

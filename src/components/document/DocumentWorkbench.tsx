@@ -9,12 +9,11 @@ import { Avatar, Button, Input, Label, Modal, Select, Spinner } from "../ui";
 import { parseMentions } from "../workspace/mentions";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { CommentsPanel } from "./CommentsPanel";
-import { ResourcesPanel } from "./ResourcesPanel";
 import { RichEditor, type RichEditorHandle, type SelectionInfo } from "./RichEditor";
 import { useDocument } from "./useDocument";
 import { useCoverUpload, VersionLibrary } from "./VersionLibrary";
 
-type Tab = "comments" | "library" | "resources";
+type Tab = "comments" | "library";
 
 export function DocumentWorkbench({
   documentId,
@@ -38,7 +37,6 @@ export function DocumentWorkbench({
     doc,
     versions,
     comments,
-    resources,
     saving,
     remoteContent,
     saveContent,
@@ -58,6 +56,8 @@ export function DocumentWorkbench({
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const { upload, uploading } = useCoverUpload();
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [savedVersionNote, setSavedVersionNote] = useState(false);
 
   const viewers = presence.filter((p) => p.user_id !== me.id && p.path === pathname);
 
@@ -69,8 +69,14 @@ export function DocumentWorkbench({
     );
   }
 
-  async function addComment(content: string, anchor: SelectionInfo | null, parentId: string | null) {
-    const { data } = await supabase
+  async function addComment(
+    content: string,
+    anchor: SelectionInfo | null,
+    parentId: string | null,
+    suggestion?: string
+  ) {
+    setActionError(null);
+    const { data, error } = await supabase
       .from("comments")
       .insert({
         document_id: documentId,
@@ -79,9 +85,15 @@ export function DocumentWorkbench({
         anchor: anchor ? { from: anchor.from, to: anchor.to, quote: anchor.quote } : null,
         parent_id: parentId,
         mentions: parseMentions(content, members),
+        suggestion: suggestion || null,
+        suggestion_status: suggestion ? "pending" : null,
       })
       .select()
       .single();
+    if (error) {
+      setActionError(`Couldn't add the comment: ${error.message}`);
+      throw error;
+    }
     // Tie the comment to the exact text range with a persistent mark
     if (data && anchor && editorRef.current?.editor) {
       const editor = editorRef.current.editor;
@@ -91,6 +103,77 @@ export function DocumentWorkbench({
         .setCommentMark(data.id)
         .run();
       saveContent(editor.getJSON());
+    }
+    reload();
+  }
+
+  /** Locate the live range of a comment's mark in the editor. */
+  function findCommentRange(commentId: string): { from: number; to: number } | null {
+    const editor = editorRef.current?.editor;
+    if (!editor) return null;
+    let from = -1;
+    let to = -1;
+    editor.state.doc.descendants((node, pos) => {
+      for (const mark of node.marks) {
+        if (mark.type.name === "commentMark" && mark.attrs.commentId === commentId) {
+          if (from === -1) from = pos;
+          to = pos + node.nodeSize;
+        }
+      }
+    });
+    return from === -1 ? null : { from, to };
+  }
+
+  /** Fallback: find the quoted text anywhere in the draft. */
+  function findQuoteRange(quote: string): { from: number; to: number } | null {
+    const editor = editorRef.current?.editor;
+    if (!editor || !quote) return null;
+    let found: { from: number; to: number } | null = null;
+    editor.state.doc.descendants((node, pos) => {
+      if (found || !node.isText || !node.text) return;
+      const idx = node.text.indexOf(quote);
+      if (idx >= 0) found = { from: pos + idx, to: pos + idx + quote.length };
+    });
+    return found;
+  }
+
+  async function acceptSuggestion(comment: Comment) {
+    setActionError(null);
+    const editor = editorRef.current?.editor;
+    if (!editor || !comment.suggestion) return;
+    const range =
+      findCommentRange(comment.id) ??
+      (comment.anchor?.quote ? findQuoteRange(comment.anchor.quote) : null);
+    if (!range) {
+      setActionError(
+        "Couldn't find the original text in the draft (it may have been edited since). Apply the change by hand, then dismiss the suggestion."
+      );
+      return;
+    }
+    editor.chain().focus().setTextSelection(range).insertContent(comment.suggestion).run();
+    editor.commands.unsetCommentMark(comment.id);
+    saveContent(editor.getJSON());
+    const { error } = await supabase
+      .from("comments")
+      .update({ suggestion_status: "accepted", resolved: true })
+      .eq("id", comment.id);
+    if (error) setActionError(`Applied in the draft, but couldn't update the comment: ${error.message}`);
+    reload();
+  }
+
+  async function rejectSuggestion(comment: Comment) {
+    setActionError(null);
+    const { error } = await supabase
+      .from("comments")
+      .update({ suggestion_status: "rejected", resolved: true })
+      .eq("id", comment.id);
+    if (error) {
+      setActionError(`Couldn't dismiss the suggestion: ${error.message}`);
+      return;
+    }
+    if (editorRef.current?.editor) {
+      editorRef.current.editor.commands.unsetCommentMark(comment.id);
+      saveContent(editorRef.current.editor.getJSON());
     }
     reload();
   }
@@ -117,18 +200,26 @@ export function DocumentWorkbench({
 
   async function doSaveVersion(e: React.FormEvent) {
     e.preventDefault();
+    setActionError(null);
     let coverUrl: string | undefined;
     if (coverFile) coverUrl = (await upload(coverFile)) ?? undefined;
     const editor = editorRef.current?.editor;
-    await saveVersion({
+    const result = await saveVersion({
       label: label || undefined,
       coverUrl,
       authorId: me.id,
       content: editor ? editor.getJSON() : doc?.current_content,
     });
+    if (result?.error) {
+      setActionError(`Couldn't save the version: ${result.error.message}`);
+      return;
+    }
     setLabel("");
     setCoverFile(null);
     setSaveOpen(false);
+    setTab("library");
+    setSavedVersionNote(true);
+    setTimeout(() => setSavedVersionNote(false), 2500);
   }
 
   function exportText() {
@@ -228,7 +319,6 @@ export function DocumentWorkbench({
                 [
                   ["comments", `Comments${openCount ? ` (${openCount})` : ""}`],
                   ["library", `Library (${versions.length})`],
-                  ["resources", `Resources (${resources.length})`],
                 ] as [Tab, string][]
               ).map(([key, text]) => (
                 <button
@@ -245,6 +335,19 @@ export function DocumentWorkbench({
                 </button>
               ))}
             </div>
+            {actionError && (
+              <div className="mb-3 rounded-lg border border-clay-400/60 bg-clay-600/10 px-3 py-2 text-xs text-clay-600">
+                {actionError}
+                <button className="ml-2 font-semibold underline" onClick={() => setActionError(null)}>
+                  dismiss
+                </button>
+              </div>
+            )}
+            {savedVersionNote && (
+              <div className="mb-3 rounded-lg border border-pine-300 bg-pine-50 px-3 py-2 text-xs font-medium text-pine-700">
+                ✓ Version saved to the library
+              </div>
+            )}
             <div className="max-h-[70vh] overflow-y-auto pr-1">
               {tab === "comments" && (
                 <CommentsPanel
@@ -253,6 +356,8 @@ export function DocumentWorkbench({
                   onCancelSelection={() => setPendingSelection(null)}
                   onAdd={addComment}
                   onResolve={resolveComment}
+                  onAcceptSuggestion={acceptSuggestion}
+                  onRejectSuggestion={rejectSuggestion}
                   activeCommentId={activeCommentId}
                   onFocusComment={focusComment}
                 />
@@ -263,9 +368,6 @@ export function DocumentWorkbench({
                   onRestore={(v) => restoreVersion(v, me.id)}
                   onDelete={softDeleteVersion}
                 />
-              )}
-              {tab === "resources" && (
-                <ResourcesPanel resources={resources} documentId={documentId} onChanged={reload} />
               )}
             </div>
           </div>

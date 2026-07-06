@@ -1,12 +1,12 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import type { Comment, Doc, DocVersion, Resource } from "@/lib/types";
+import type { Comment, Doc, DocVersion } from "@/lib/types";
 import { wordCountOf } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Loads a document plus its versions/comments/resources, autosaves content
+ * Loads a document plus its versions/comments, autosaves content
  * (debounced), and keeps everything live via Supabase Realtime.
  * Concurrency model: last-write-wins on current_content; remote updates are
  * surfaced via `remoteContent` so the editor can apply them when not typing.
@@ -16,14 +16,13 @@ export function useDocument(documentId: string) {
   const [doc, setDoc] = useState<Doc | null>(null);
   const [versions, setVersions] = useState<DocVersion[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
-  const [resources, setResources] = useState<Resource[]>([]);
   const [saving, setSaving] = useState(false);
   const [remoteContent, setRemoteContent] = useState<{ content: any; ts: number } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLocalSave = useRef<number>(0);
 
   const reload = useCallback(async () => {
-    const [{ data: d }, { data: v }, { data: c }, { data: r }] = await Promise.all([
+    const [{ data: d }, { data: v }, { data: c }] = await Promise.all([
       supabase.from("documents").select("*").eq("id", documentId).single(),
       supabase
         .from("document_versions")
@@ -36,16 +35,10 @@ export function useDocument(documentId: string) {
         .select("*, author:profiles(*)")
         .eq("document_id", documentId)
         .order("created_at", { ascending: true }),
-      supabase
-        .from("resources")
-        .select("*")
-        .eq("document_id", documentId)
-        .order("created_at", { ascending: false }),
     ]);
     setDoc(d);
     setVersions((v as any) ?? []);
     setComments((c as any) ?? []);
-    setResources(r ?? []);
   }, [supabase, documentId]);
 
   useEffect(() => {
@@ -91,18 +84,6 @@ export function useDocument(documentId: string) {
             .then(({ data }) => setVersions((data as any) ?? []));
         }
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "resources", filter: `document_id=eq.${documentId}` },
-        () => {
-          supabase
-            .from("resources")
-            .select("*")
-            .eq("document_id", documentId)
-            .order("created_at", { ascending: false })
-            .then(({ data }) => setResources(data ?? []));
-        }
-      )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -137,8 +118,8 @@ export function useDocument(documentId: string) {
   const saveVersion = useCallback(
     async (opts: { label?: string; coverUrl?: string; authorId: string; content?: any }) => {
       const content = opts.content ?? doc?.current_content;
-      if (!content) return;
-      await supabase.from("document_versions").insert({
+      if (!content) return { error: new Error("Nothing to snapshot yet — write something first.") };
+      const { error } = await supabase.from("document_versions").insert({
         document_id: documentId,
         content,
         author_id: opts.authorId,
@@ -146,6 +127,7 @@ export function useDocument(documentId: string) {
         cover_image_url: opts.coverUrl || null,
         word_count: wordCountOf(content),
       });
+      return { error };
     },
     [supabase, documentId, doc?.current_content]
   );
@@ -187,7 +169,6 @@ export function useDocument(documentId: string) {
     doc,
     versions,
     comments,
-    resources,
     saving,
     remoteContent,
     saveContent,

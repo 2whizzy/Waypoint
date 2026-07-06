@@ -91,6 +91,8 @@ export interface Comment {
   resolved: boolean;
   parent_id: string | null;
   mentions: string[];
+  suggestion: string | null;
+  suggestion_status: "pending" | "accepted" | "rejected" | null;
   created_at: string;
   author?: Profile;
 }

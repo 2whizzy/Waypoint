@@ -53,7 +53,10 @@ body {
   @apply text-ink-faint float-left h-0 pointer-events-none;
 }
 .comment-highlight {
-  @apply bg-marigold-100 border-b-2 border-marigold-400 cursor-pointer;
+  @apply bg-marigold-100 border-b-2 border-marigold-400 cursor-pointer rounded-sm transition-colors;
+}
+.comment-highlight:hover {
+  @apply bg-marigold-200;
 }
 
 /* ---- Print / export ---- */
